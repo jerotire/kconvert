@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Service
+MimeType=image/*;
+Actions=convert;
+X-KDE-Priority=TopLevel
+
+[Desktop Action convert]
+Name=Convert...
+Icon=image-x-generic
+Exec=kconvert %F

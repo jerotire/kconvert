@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+tests/fixtures/*.converted.*
+tests/fixtures/out/

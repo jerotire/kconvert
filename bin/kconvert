@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""kconvert - Dolphin right-click image converter (PyQt6 + ImageMagick).
+
+Usage: kconvert FILE [FILE ...]
+Opens a dialog to pick the target format and options, then converts every
+file with `magick`. Output lands next to the source with the new extension.
+"""
+import os
+import shutil
+import subprocess
+import sys
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QHBoxLayout, QLabel, QMessageBox, QSlider, QSpinBox, QWidget,
+)
+
+__version__ = "0.1.0"
+
+# ext -> (label, has_quality, default_quality, extra magick args)
+FORMATS = {
+    "webp": ("WebP", True, 85, []),
+    "avif": ("AVIF", True, 60, []),
+    "jpg":  ("JPEG", True, 90, []),
+    "png":  ("PNG", False, 0, ["-define", "png:compression-level=9"]),
+    "gif":  ("GIF", False, 0, []),
+    "tiff": ("TIFF", False, 0, ["-compress", "lzw"]),
+    "bmp":  ("BMP", False, 0, []),
+    "ico":  ("ICO", False, 0, ["-define", "icon:auto-resize=256,128,64,48,32,16"]),
+}
+
+
+class ConvertDialog(QDialog):
+    def __init__(self, files):
+        super().__init__()
+        self.files = files
+        self.setWindowTitle(f"Convert {len(files)} image{'s' if len(files) != 1 else ''}")
+        self.setMinimumWidth(380)
+
+        form = QFormLayout(self)
+
+        self.fmt = QComboBox()
+        for ext, (label, *_rest) in FORMATS.items():
+            self.fmt.addItem(label, ext)
+        self.fmt.setCurrentIndex(0)
+        form.addRow("Target format", self.fmt)
+
+        self.quality_row = QWidget()
+        qlay = QHBoxLayout(self.quality_row)
+        qlay.setContentsMargins(0, 0, 0, 0)
+        self.quality = QSlider(Qt.Orientation.Horizontal)
+        self.quality.setRange(1, 100)
+        self.quality_label = QLabel()
+        self.quality_label.setMinimumWidth(32)
+        qlay.addWidget(self.quality)
+        qlay.addWidget(self.quality_label)
+        form.addRow("Quality", self.quality_row)
+
+        self.resize_pct = QSpinBox()
+        self.resize_pct.setRange(1, 400)
+        self.resize_pct.setValue(100)
+        self.resize_pct.setSuffix(" %")
+        form.addRow("Resize", self.resize_pct)
+
+        self.max_w = QSpinBox()
+        self.max_w.setRange(0, 20000)
+        self.max_w.setSpecialValueText("off")
+        self.max_w.setSuffix(" px")
+        form.addRow("Max width", self.max_w)
+
+        self.strip = QCheckBox("Strip metadata (EXIF etc)")
+        self.strip.setChecked(True)
+        form.addRow(self.strip)
+
+        self.overwrite = QCheckBox("Overwrite if target exists")
+        form.addRow(self.overwrite)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Convert")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+        self.fmt.currentIndexChanged.connect(self.on_fmt)
+        self.quality.valueChanged.connect(lambda v: self.quality_label.setText(str(v)))
+        self.on_fmt()
+
+    def on_fmt(self):
+        ext = self.fmt.currentData()
+        _, has_q, default_q, _ = FORMATS[ext]
+        self.quality_row.setEnabled(has_q)
+        self.quality.setValue(default_q if has_q else 100)
+        self.quality_label.setText(str(self.quality.value()) if has_q else "n/a")
+
+    def build_cmd(self, src):
+        ext = self.fmt.currentData()
+        _, has_q, _, extra = FORMATS[ext]
+        root, _ = os.path.splitext(src)
+        dst = f"{root}.{ext}"
+        if dst == src:
+            dst = f"{root}.converted.{ext}"
+        if os.path.exists(dst) and not self.overwrite.isChecked():
+            return None, dst, "target already exists"
+
+        cmd = ["magick", src]
+        if self.strip.isChecked():
+            cmd.append("-strip")
+        if self.resize_pct.value() != 100:
+            cmd += ["-resize", f"{self.resize_pct.value()}%"]
+        if self.max_w.value() > 0:
+            cmd += ["-resize", f"{self.max_w.value()}x>"]
+        if has_q:
+            cmd += ["-quality", str(self.quality.value())]
+        cmd += extra
+        cmd.append(dst)
+        return cmd, dst, None
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("-V", "--version"):
+        print(f"kconvert {__version__}")
+        return 0
+
+    files = [os.path.abspath(f) for f in sys.argv[1:]]
+    app = QApplication(sys.argv)
+    if not files:
+        QMessageBox.warning(None, "kconvert", "No files given.")
+        return 1
+    if shutil.which("magick") is None:
+        QMessageBox.critical(None, "kconvert", "ImageMagick (`magick`) not found in PATH.")
+        return 1
+
+    dlg = ConvertDialog(files)
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return 0
+
+    ok, failed = 0, []
+    for src in files:
+        cmd, dst, err = dlg.build_cmd(src)
+        if err:
+            failed.append(f"{os.path.basename(src)}: {err}")
+            continue
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0:
+            ok += 1
+        else:
+            last = res.stderr.strip().splitlines()[-1] if res.stderr.strip() else "magick failed"
+            failed.append(f"{os.path.basename(src)}: {last}")
+
+    if failed:
+        QMessageBox.warning(
+            None, "kconvert",
+            f"Converted {ok}/{len(files)}.\n\nFailed:\n" + "\n".join(failed),
+        )
+        return 1
+    if shutil.which("notify-send"):
+        subprocess.run(
+            ["notify-send", "-i", "image-x-generic", "kconvert",
+             f"Converted {ok} file{'s' if ok != 1 else ''} to {dlg.fmt.currentText()}"],
+            check=False,
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
