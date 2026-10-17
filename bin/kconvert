@@ -16,18 +16,25 @@ from PyQt6.QtWidgets import (
     QFormLayout, QHBoxLayout, QLabel, QMessageBox, QSlider, QSpinBox, QWidget,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
-# ext -> (label, has_quality, default_quality, extra magick args)
+# ext -> (label, has_quality, default_quality, has_alpha, extra magick args)
 FORMATS = {
-    "webp": ("WebP", True, 85, []),
-    "avif": ("AVIF", True, 60, []),
-    "jpg":  ("JPEG", True, 90, []),
-    "png":  ("PNG", False, 0, ["-define", "png:compression-level=9"]),
-    "gif":  ("GIF", False, 0, []),
-    "tiff": ("TIFF", False, 0, ["-compress", "lzw"]),
-    "bmp":  ("BMP", False, 0, []),
-    "ico":  ("ICO", False, 0, ["-define", "icon:auto-resize=256,128,64,48,32,16"]),
+    "webp": ("WebP", True, 85, True, []),
+    "avif": ("AVIF", True, 60, True, []),
+    "jpg":  ("JPEG", True, 90, False, []),
+    "png":  ("PNG", False, 0, True, ["-define", "png:compression-level=9"]),
+    "gif":  ("GIF", False, 0, True, []),
+    "tiff": ("TIFF", False, 0, True, ["-compress", "lzw"]),
+    "bmp":  ("BMP", False, 0, False, []),
+    "ico":  ("ICO", False, 0, True, ["-define", "icon:auto-resize=256,128,64,48,32,16"]),
+}
+
+# label -> magick colour. "none" keeps alpha.
+BACKGROUNDS = {
+    "Transparent": "none",
+    "White": "white",
+    "Black": "black",
 }
 
 
@@ -69,6 +76,11 @@ class ConvertDialog(QDialog):
         self.max_w.setSuffix(" px")
         form.addRow("Max width", self.max_w)
 
+        self.background = QComboBox()
+        for label in BACKGROUNDS:
+            self.background.addItem(label)
+        form.addRow("Background", self.background)
+
         self.strip = QCheckBox("Strip metadata (EXIF etc)")
         self.strip.setChecked(True)
         form.addRow(self.strip)
@@ -90,14 +102,23 @@ class ConvertDialog(QDialog):
 
     def on_fmt(self):
         ext = self.fmt.currentData()
-        _, has_q, default_q, _ = FORMATS[ext]
+        _, has_q, default_q, has_alpha, _ = FORMATS[ext]
         self.quality_row.setEnabled(has_q)
         self.quality.setValue(default_q if has_q else 100)
         self.quality_label.setText(str(self.quality.value()) if has_q else "n/a")
 
+        # Formats with no alpha channel cannot be transparent; drop to White.
+        transparent_idx = self.background.findText("Transparent")
+        model_item = self.background.model().item(transparent_idx)
+        model_item.setEnabled(has_alpha)
+        if has_alpha:
+            self.background.setCurrentIndex(transparent_idx)
+        elif self.background.currentIndex() == transparent_idx:
+            self.background.setCurrentText("White")
+
     def build_cmd(self, src):
         ext = self.fmt.currentData()
-        _, has_q, _, extra = FORMATS[ext]
+        _, has_q, _, has_alpha, extra = FORMATS[ext]
         root, _ = os.path.splitext(src)
         dst = f"{root}.{ext}"
         if dst == src:
@@ -105,7 +126,15 @@ class ConvertDialog(QDialog):
         if os.path.exists(dst) and not self.overwrite.isChecked():
             return None, dst, "target already exists"
 
-        cmd = ["magick", src]
+        bg = BACKGROUNDS[self.background.currentText()]
+        if not has_alpha and bg == "none":
+            bg = "white"
+
+        # -background must precede the input so vector/transparent sources
+        # (SVG, PDF) are rasterised onto it rather than ImageMagick's white.
+        cmd = ["magick", "-background", bg, src]
+        if bg != "none":
+            cmd += ["-flatten"]
         if self.strip.isChecked():
             cmd.append("-strip")
         if self.resize_pct.value() != 100:

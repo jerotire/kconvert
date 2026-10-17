@@ -5,22 +5,27 @@
 Each format is one entry in the `FORMATS` dict near the top of `bin/kconvert`:
 
 ```python
-"ext": ("Label", has_quality, default_quality, [extra, magick, args]),
+"ext": ("Label", has_quality, default_quality, has_alpha, [extra, magick, args]),
 ```
 
 1. `ext` is the output extension and what ImageMagick uses to pick the encoder.
 2. `Label` is what shows in the combo box.
 3. `has_quality` enables the slider.
 4. `default_quality` is what the slider jumps to when this format is picked.
-5. Extra args are appended verbatim before the output path.
+5. `has_alpha` controls whether Transparent is offered as a background.
+6. Extra args are appended verbatim before the output path.
 
 Examples:
 
 ```python
-"jxl":  ("JPEG XL", True, 80, []),
-"heic": ("HEIC", True, 70, []),
-"pdf":  ("PDF", False, 0, []),
+"jxl":  ("JPEG XL", True, 80, True, []),
+"heic": ("HEIC", True, 70, True, []),
+"pdf":  ("PDF", False, 0, True, []),
 ```
+
+## Adding a background colour
+
+One line in `BACKGROUNDS`: `"Label": "<any magick colour>"`, e.g. `"Drake": "#1a1612"`.
 
 Check the encoder is available first: `magick -list format | grep -i jxl`.
 
@@ -35,7 +40,6 @@ Dials are plain Qt widgets added in `ConvertDialog.__init__` and read in `build_
 Ideas that fit the existing shape:
 
 - Rotate / auto-orient: `-auto-orient`
-- Background fill for formats without alpha: `-background white -flatten`
 - Colourspace: `-colorspace sRGB`
 - Lossless WebP toggle: `-define webp:lossless=true`
 - Output to a subfolder instead of beside the source

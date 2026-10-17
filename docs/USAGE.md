@@ -25,6 +25,7 @@ Same dialog, same behaviour. Handy for testing.
 | Quality | Lossy quality 1 to 100. Disabled for lossless formats | WebP 85, AVIF 60, JPEG 90 |
 | Resize | Scale by percentage | 100 % |
 | Max width | Cap width in px, keeps aspect, never upscales. 0 = off | off |
+| Background | Transparent, White or Black. Transparent is greyed out for JPEG and BMP (no alpha) and falls back to White | Transparent |
 | Strip metadata | Drops EXIF, ICC, XMP etc | on |
 | Overwrite if target exists | Otherwise existing targets are skipped and reported | off |
 
@@ -36,3 +37,7 @@ All selected files get the same settings. Failures do not stop the batch; you ge
 
 - `0` all converted, or dialog cancelled
 - `1` one or more failures, or no files given, or `magick` not found
+
+## Transparency
+
+ImageMagick rasterises SVG and PDF onto white unless told otherwise, so kconvert always passes `-background` before the input. **Transparent** is the default for every format that supports alpha. Picking a colour flattens the image onto it, which is what you want when going to JPEG or when you need an opaque PNG.

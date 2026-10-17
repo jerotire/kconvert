@@ -10,6 +10,7 @@ Small PyQt6 dialog in front of ImageMagick. Nothing clever, nothing resident. Wo
 - Quality slider, only enabled for lossy formats, with per-format defaults
 - Resize by percentage
 - Max width cap (never upscales)
+- Background: transparent by default, or flatten onto white/black
 - Strip metadata (on by default)
 - Overwrite toggle (off by default; existing targets are skipped and reported)
 - Desktop notification on success, summary dialog on any failure

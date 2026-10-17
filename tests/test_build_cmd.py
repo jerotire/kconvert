@@ -30,7 +30,7 @@ def test_webp_default(tmp_path):
     cmd, dst, err = dlg.build_cmd(src)
     assert err is None
     assert dst == str(tmp_path / "a.webp")
-    assert cmd == ["magick", src, "-strip", "-quality", "85", dst]
+    assert cmd == ["magick", "-background", "none", src, "-strip", "-quality", "85", dst]
 
 
 def test_same_format_gets_converted_suffix(tmp_path):
@@ -70,3 +70,35 @@ def test_resize_and_max_width(tmp_path):
     assert "-strip" not in cmd
     assert cmd[cmd.index("-resize") + 1] == "50%"
     assert "1200x>" in cmd
+
+
+def test_jpeg_forces_opaque_background(tmp_path):
+    src = str(tmp_path / "a.svg")
+    open(src, "w").close()
+    dlg = kconvert.ConvertDialog([src])
+    pick(dlg, "jpg")
+    cmd, _, _ = dlg.build_cmd(src)
+    assert cmd[1:3] == ["-background", "white"]
+    assert "-flatten" in cmd
+    assert dlg.background.currentText() == "White"
+
+
+def test_png_keeps_transparency_by_default(tmp_path):
+    src = str(tmp_path / "a.svg")
+    open(src, "w").close()
+    dlg = kconvert.ConvertDialog([src])
+    pick(dlg, "png")
+    cmd, _, _ = dlg.build_cmd(src)
+    assert cmd[1:3] == ["-background", "none"]
+    assert "-flatten" not in cmd
+
+
+def test_explicit_black_background_on_png(tmp_path):
+    src = str(tmp_path / "a.svg")
+    open(src, "w").close()
+    dlg = kconvert.ConvertDialog([src])
+    pick(dlg, "png")
+    dlg.background.setCurrentText("Black")
+    cmd, _, _ = dlg.build_cmd(src)
+    assert cmd[1:3] == ["-background", "black"]
+    assert "-flatten" in cmd
